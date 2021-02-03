@@ -1,0 +1,7 @@
+/*
+!/.gitignore
+!/cmake_depend
+!/cmake_pico
+!/src
+!/build.rs
+!/Cargo.toml

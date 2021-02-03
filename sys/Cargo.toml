@@ -1,0 +1,16 @@
+[package]
+authors = ["White-Green <43771790+White-Green@users.noreply.github.com>"]
+edition = "2018"
+name = "raspi_pico_sdk_sys"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cty = "0.2.1"
+
+[build-dependencies]
+bindgen = {version = "0.56.0", features = ["runtime"]}
+clang = {version = "1.0.3", features = ["clang_10_0", "runtime"]}
+cmake = "0.1.45"
+guess_host_triple = "0.1.2"

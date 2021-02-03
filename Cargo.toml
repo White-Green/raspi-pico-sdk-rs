@@ -1,0 +1,10 @@
+[package]
+authors = ["White-Green <43771790+White-Green@users.noreply.github.com>"]
+edition = "2018"
+name = "raspi_pico_sdk"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+raspi_pico_sdk_sys = {path = "sys"}
