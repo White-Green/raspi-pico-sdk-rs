@@ -9,6 +9,12 @@ use std::process::Stdio;
 use clang::{Clang, EntityKind, Index};
 
 fn main() {
+    println!("cargo:rerun-if-changed=cmake_depend/CMakeLists.txt");
+    println!("cargo:rerun-if-changed=cmake_pico/CMakeLists.txt");
+    println!("cargo:rerun-if-changed=cmake_pico/entry.c");
+    println!("cargo:rerun-if-changed=src/lib.rs");
+    println!("cargo:rerun-if-changed=build.rs");
+
     Command::new("git")
         .args(&["clone", "https://github.com/raspberrypi/pico-sdk"])
         .spawn().expect("failed to git clone")
@@ -208,4 +214,7 @@ fn main() {
         .expect("failed to generate binding");
     bindings.write_to_file(out_dir.join("bindings.rs"))
         .expect("failed to write bindings.rs");
+
+    println!("cargo:rustc-link-search=static={}", out_dir.join("build").display());
+    println!("cargo:rustc-link-lib=static=pico");
 }
