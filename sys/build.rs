@@ -9,21 +9,12 @@ use std::process::Stdio;
 use clang::{Clang, EntityKind, Index};
 
 fn main() {
+    const GENERATED_CODE_MARKER: &'static str = "\n\n/// Generated Code\n\n";
     println!("cargo:rerun-if-changed=cmake_depend/CMakeLists.txt");
     println!("cargo:rerun-if-changed=cmake_pico/CMakeLists.txt");
     println!("cargo:rerun-if-changed=cmake_pico/entry.c");
     println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-changed=build.rs");
-
-    Command::new("git")
-        .args(&["clone", "https://github.com/raspberrypi/pico-sdk"])
-        .spawn().expect("failed to git clone")
-        .wait().expect("failed to wait git clone");
-    Command::new("git")
-        .current_dir("./pico-sdk")
-        .args(&["sumodule", "update", "--init"])
-        .spawn().expect("failed to git submodule init")
-        .wait().expect("failed to wait git submodule init");
 
     let target_triple = std::env::var("TARGET").unwrap();
     let mut gcc_command = if target_triple == "thumbv6m-none-eabi" {
@@ -66,11 +57,25 @@ fn main() {
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let out_dir = Path::new(&out_dir);
 
-    let entry_c = fs::read("cmake_pico/entry.c").expect("failed to read entry.c");
-    let mut entry = File::create(out_dir.join("entry.c")).expect("failed to create entry.c");
-    entry
-        .write_all(&entry_c)
-        .expect("failed to write to entry.c");
+    let mut entry = {
+        let entry_c = std::env::var("PICO_SDK_RS_CUSTOM_ENTRY_POINT")
+            .map(|entry_point|
+                match fs::read_to_string(&entry_point) {
+                    Ok(mut s) => {
+                        println!("cargo:rerun-if-changed={}", entry_point);
+                        s.drain(s.find(GENERATED_CODE_MARKER).unwrap_or(s.len())..);
+                        Ok(s)
+                    }
+                    e => e
+                })
+            .unwrap_or_else(|_| fs::read_to_string("cmake_pico/entry.c"))
+            .expect("failed to read entry.c");
+
+        let mut entry = File::create(out_dir.join("entry.c")).expect("failed to create entry.c");
+        entry.write_all(entry_c.as_bytes())
+            .expect("failed to write to entry.c");
+        entry
+    };
 
     cmake::Config::new("cmake_pico")
         .define("ENTRY_POINT", out_dir.join("entry.c"))
@@ -123,8 +128,8 @@ fn main() {
 
     parser.skip_function_bodies(true);
     let parsed = parser.parse().expect("failed to parse");
-    // panic!("{:?}", parsed.get_entity().get_children());
-    let mut code = String::from("\n\n/// Generated Code\n\n");
+
+    let mut code = String::from(GENERATED_CODE_MARKER);
     for entity in parsed.get_entity().get_children() {
         let location = entity.get_location().unwrap();
         let (location, _, _) = location.get_presumed_location();
@@ -136,9 +141,7 @@ fn main() {
             println!("ignored: {:?}", entity);
             continue;
         }
-        if entity.get_kind() == EntityKind::FunctionDecl
-        /* && entity.get_linkage() != Some(Linkage::External)*/ /*&& entity.get_children().iter().any(|c| c.get_kind() == EntityKind::CompoundStmt) */
-        {
+        if entity.get_kind() == EntityKind::FunctionDecl {
             code += &format!(
                 "{} wrapped_{}({}) {{ {}{1}({}); }}\n",
                 entity.get_result_type().unwrap().get_display_name(),
@@ -194,11 +197,29 @@ fn main() {
 
     entry.write_all(code.as_bytes())
         .expect("failed to write to entry.c");
-
-    cmake::Config::new("cmake_pico")
-        .define("ENTRY_POINT", out_dir.join("entry.c"))
-        .build_target("all")
-        .build();
+    for alternative_path in std::env::var("PICO_SDK_RS_C_BINDING_ALTERNATIVES").unwrap_or(String::new())
+        .trim()
+        .split(":") {
+        let mut file = match File::open(&alternative_path) {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("failed to open file {} by {}", alternative_path, e);
+                continue;
+            }
+        };
+        let mut content = String::new();
+        if let Err(e) = file.read_to_string(&mut content) {
+            eprintln!("failed to read content by {}", e);
+            continue;
+        }
+        let len = content.find(GENERATED_CODE_MARKER).unwrap_or(content.len());
+        content.drain(len..);
+        content.push_str(&code);
+        if let Err(e) = fs::write(&alternative_path, content) {
+            eprintln!("failed to write by {}", e);
+            continue;
+        }
+    }
 
     let bindings = bindgen::builder()
         .header(out_dir.join("entry.c").display().to_string())
@@ -214,7 +235,4 @@ fn main() {
         .expect("failed to generate binding");
     bindings.write_to_file(out_dir.join("bindings.rs"))
         .expect("failed to write bindings.rs");
-
-    println!("cargo:rustc-link-search=static={}", out_dir.join("build").display());
-    println!("cargo:rustc-link-lib=static=pico");
 }

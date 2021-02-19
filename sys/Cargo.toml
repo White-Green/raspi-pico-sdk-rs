@@ -14,3 +14,4 @@ bindgen = {version = "0.56.0", features = ["runtime"]}
 clang = {version = "1.0.3", features = ["clang_10_0", "runtime"]}
 cmake = "0.1.45"
 guess_host_triple = "0.1.2"
+libc = "0.2.85"
